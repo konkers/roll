@@ -29,6 +29,7 @@ type Config struct {
 	APIOAuth    string `json:"api_oauth"`
 	IRCOAuth    string `json:"irc_oauth"`
 	IRCAddress  string `json:"irc_addr"`
+	APIURLBase  string `json:"api_url_base"`
 	AdminUser   string `json:"admin_user"`
 }
 
@@ -57,6 +58,9 @@ func NewBot(config *Config) *Bot {
 
 	if config.IRCAddress != "" {
 		b.ircClient.IrcAddress = config.IRCAddress
+	}
+	if config.APIURLBase != "" {
+		b.apiClient.UrlBase = config.APIURLBase
 	}
 
 	b.ircClient.OnConnect(b.handleConnect)
