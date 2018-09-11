@@ -15,7 +15,7 @@ func (b *Bot) indexHandler(w http.ResponseWriter, req *http.Request) {
 
 func (b *Bot) redirectHandler(w http.ResponseWriter, req *http.Request) {
 	// remove/add not default ports from req.Host
-	target := "https://" + b.config.HTTPSAddr + req.URL.Path
+	target := "https://" + b.config.HTTPRedirectBase + req.URL.Path
 	if len(req.URL.RawQuery) > 0 {
 		target += "?" + req.URL.RawQuery
 	}

@@ -16,10 +16,11 @@ type Config struct {
 	APIURLBase  string `json:"api_url_base"`
 	AdminUser   string `json:"admin_user"`
 
-	HTTPAddr  string `json:"http_addr"`
-	HTTPSAddr string `json:"https_addr"`
-	KeyFile   string `json:"key_file"`
-	CertFile  string `json:"cert_file"`
+	HTTPAddr         string `json:"http_addr"`
+	HTTPSAddr        string `json:"https_addr"`
+	HTTPRedirectBase string `json:"http_redirect_base"`
+	KeyFile          string `json:"key_file"`
+	CertFile         string `json:"cert_file"`
 }
 
 func LoadConfig(fileName string) (*Config, error) {
