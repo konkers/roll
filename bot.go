@@ -21,18 +21,6 @@ type Bot struct {
 	cmdErr    error
 }
 
-// Config is the bot's configuration
-type Config struct {
-	BotUsername string `json:"bot_username"`
-	Channel     string `json:"channel"`
-	ClientID    string `json:"client_id"`
-	APIOAuth    string `json:"api_oauth"`
-	IRCOAuth    string `json:"irc_oauth"`
-	IRCAddress  string `json:"irc_addr"`
-	APIURLBase  string `json:"api_url_base"`
-	AdminUser   string `json:"admin_user"`
-}
-
 // CommandContext is passed to commands that are executed.
 type CommandContext struct {
 	Bot     *Bot
@@ -80,6 +68,7 @@ func (b *Bot) AddCommand(name string, help string,
 
 // Connect the bot to Twitch.
 func (b *Bot) Connect() error {
+	b.startWebserver()
 	return b.ircClient.Connect()
 }
 
