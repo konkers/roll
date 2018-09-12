@@ -9,12 +9,13 @@ import (
 type Config struct {
 	BotUsername string `json:"bot_username"`
 	Channel     string `json:"channel"`
-	ClientID    string `json:"client_id"`
 	APIOAuth    string `json:"api_oauth"`
 	IRCOAuth    string `json:"irc_oauth"`
 	IRCAddress  string `json:"irc_addr"`
 	APIURLBase  string `json:"api_url_base"`
 	AdminUser   string `json:"admin_user"`
+
+	ClientID string `json:client_id"`
 
 	HTTPAddr         string `json:"http_addr"`
 	HTTPSAddr        string `json:"https_addr"`

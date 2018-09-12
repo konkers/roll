@@ -11,7 +11,7 @@ import (
 
 // Bot is the main object that represents the bot.
 type Bot struct {
-	config    *Config
+	Config    *Config
 	ircClient *twitch.Client
 	apiClient *twitchapi.Connection
 	commands  *cmd.Engine
@@ -35,7 +35,7 @@ type CommandContext struct {
 // NewBot creates a new, unconnected bot.
 func NewBot(config *Config) *Bot {
 	b := &Bot{
-		config:    config,
+		Config:    config,
 		ircClient: twitch.NewClient(config.BotUsername, config.IRCOAuth),
 		apiClient: twitchapi.NewConnection(config.ClientID, config.APIOAuth),
 		commands:  cmd.NewEngine(),
@@ -54,7 +54,7 @@ func NewBot(config *Config) *Bot {
 	b.ircClient.OnConnect(b.handleConnect)
 	b.ircClient.OnNewMessage(b.handleMessage)
 
-	b.ircClient.Join(b.config.Channel)
+	b.ircClient.Join(b.Config.Channel)
 
 	return b
 }
@@ -101,7 +101,7 @@ func (b *Bot) handleConnect() {
 
 func (b *Bot) userLevel(username string) int {
 	log.Println(username)
-	if username == b.config.AdminUser {
+	if username == b.Config.AdminUser {
 		return 100
 	} else {
 		return 0
