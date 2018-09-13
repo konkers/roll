@@ -22,6 +22,8 @@ type Bot struct {
 	DB *storm.DB
 
 	marathon *MarathonService
+	alert    *AlertService
+
 	// For testing.  Unsure what the best way to handle this longterm.
 	onConnect func()
 	cmdErr    error
