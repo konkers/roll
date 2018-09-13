@@ -2,8 +2,10 @@ package roll
 
 import (
 	"log"
+	"net/http"
 	"strings"
 
+	"github.com/asdine/storm"
 	twitch "github.com/gempir/go-twitch-irc"
 	"github.com/konkers/cmd"
 	"github.com/konkers/twitchapi"
@@ -16,6 +18,10 @@ type Bot struct {
 	apiClient *twitchapi.Connection
 	commands  *cmd.Engine
 
+	// This should eventually be private and hand out namespaces to modules.
+	DB *storm.DB
+
+	marathon *MarathonService
 	// For testing.  Unsure what the best way to handle this longterm.
 	onConnect func()
 	cmdErr    error
@@ -28,19 +34,29 @@ type CommandContext struct {
 	User    *twitch.User
 	Message *twitch.Message
 
+	UserLevel int
+
 	API *twitchapi.Connection
 	IRC *twitch.Client
 }
 
 // NewBot creates a new, unconnected bot.
 func NewBot(config *Config) *Bot {
+	db, err := storm.Open("bot.db")
+	if err != nil {
+		log.Fatalf("can't open storm db: %v", err)
+	}
+
 	b := &Bot{
 		Config:    config,
-		ircClient: twitch.NewClient(config.BotUsername, config.IRCOAuth),
+		DB:        db,
+		ircClient: twitch.NewClient(config.BotUsername, "oauth:"+config.IRCOAuth),
 		apiClient: twitchapi.NewConnection(config.ClientID, config.APIOAuth),
 		commands:  cmd.NewEngine(),
 	}
 
+	b.AddCommand("marathon", "Show/Manipulate current maraton.", marathonCommand, 0)
+	b.AddCommand("m", "alias for marathon.", marathonCommand, 0)
 	b.AddCommand("game", "Tells the channel the current game.", gameCommand, 0)
 	b.AddCommand("setgame", "Sets the stream game.", setGameCommand, 10)
 
@@ -77,12 +93,13 @@ func (b *Bot) handleMessage(channel string, user twitch.User, message twitch.Mes
 	log.Println()
 	if strings.HasPrefix(message.Text, "!") {
 		ctx := &CommandContext{
-			Bot:     b,
-			Channel: channel,
-			User:    &user,
-			Message: &message,
-			API:     b.apiClient,
-			IRC:     b.ircClient,
+			Bot:       b,
+			Channel:   channel,
+			User:      &user,
+			UserLevel: b.userLevel(user.Username),
+			Message:   &message,
+			API:       b.apiClient,
+			IRC:       b.ircClient,
 		}
 		b.cmdErr = b.commands.ExecString(
 			ctx, b.userLevel(user.Username),
@@ -106,4 +123,9 @@ func (b *Bot) userLevel(username string) int {
 	} else {
 		return 0
 	}
+}
+
+func (b *Bot) isAdminRequest(r *http.Request) bool {
+	return r.Header.Get("Client-ID") == b.Config.ClientID &&
+		r.Header.Get("Authorization") == ("OAuth "+b.Config.APIOAuth)
 }

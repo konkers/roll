@@ -15,7 +15,7 @@ type Config struct {
 	APIURLBase  string `json:"api_url_base"`
 	AdminUser   string `json:"admin_user"`
 
-	ClientID string `json:client_id"`
+	ClientID string `json:"client_id"`
 
 	HTTPAddr         string `json:"http_addr"`
 	HTTPSAddr        string `json:"https_addr"`
