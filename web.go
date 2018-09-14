@@ -78,10 +78,12 @@ func (b *Bot) startWebserver() error {
 	r.HandleFunc("/", b.indexHandler)
 
 	b.alert = NewAlertService(b)
+	b.giveaway = NewGiveawayService(b)
 	b.marathon = NewMarathonService(b)
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterService(b.alert, "")
+	s.RegisterService(b.giveaway, "")
 	s.RegisterService(b.marathon, "")
 	r.Handle("/rpc", s)
 

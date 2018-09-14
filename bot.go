@@ -21,8 +21,9 @@ type Bot struct {
 	// This should eventually be private and hand out namespaces to modules.
 	DB *storm.DB
 
-	marathon *MarathonService
 	alert    *AlertService
+	giveaway *GiveawayService
+	marathon *MarathonService
 
 	// For testing.  Unsure what the best way to handle this longterm.
 	onConnect func()
@@ -57,9 +58,10 @@ func NewBot(config *Config) *Bot {
 		commands:  cmd.NewEngine(),
 	}
 
+	b.AddCommand("game", "Tells the channel the current game.", gameCommand, 0)
+	b.AddCommand("giveaway", "Giveaway", giveawayCommand, 0)
 	b.AddCommand("marathon", "Show/Manipulate current maraton.", marathonCommand, 0)
 	b.AddCommand("m", "alias for marathon.", marathonCommand, 0)
-	b.AddCommand("game", "Tells the channel the current game.", gameCommand, 0)
 	b.AddCommand("setgame", "Sets the stream game.", setGameCommand, 10)
 
 	if config.IRCAddress != "" {
