@@ -42,7 +42,8 @@ var marathonCmd = cmd.NewEngine()
 
 func NewMarathonService(bot *Bot) *MarathonService {
 	marathonCmd.AddCommand("next", "go to next game", marathonNextCommand, 10)
-	marathonCmd.AddCommand("reset", "reset the marathon", marathonResetCommand, 10)
+	marathonCmd.AddCommand("resetgame", "reset the game", marathonResetGameCommand, 10)
+	marathonCmd.AddCommand("resetmarathon", "reset the marathon", marathonResetMarathonCommand, 10)
 	return &MarathonService{
 		bot: bot,
 	}
@@ -110,7 +111,7 @@ func marathonCommand(ctx interface{}, args []string) error {
 	return marathonCmd.Exec(cc, cc.UserLevel, args)
 }
 
-func marathonResetCommand(ctx interface{}, args []string) error {
+func marathonResetGameCommand(ctx interface{}, args []string) error {
 	cc, ok := ctx.(*CommandContext)
 	if !ok {
 		return fmt.Errorf("ctx not a CommandContext")
@@ -122,7 +123,29 @@ func marathonResetCommand(ctx interface{}, args []string) error {
 		return err
 	}
 
-	marathon.Reset()
+	marathon.ResetGame()
+	reply := 0
+	err = cc.Bot.marathon.Update(nil, &marathon, &reply)
+	if err != nil {
+		return err
+	}
+	cc.IRC.Say(cc.Channel, "RESET!")
+	return nil
+}
+
+func marathonResetMarathonCommand(ctx interface{}, args []string) error {
+	cc, ok := ctx.(*CommandContext)
+	if !ok {
+		return fmt.Errorf("ctx not a CommandContext")
+	}
+	var marathon Marathon
+	cur := CurrentMarathon
+	err := cc.Bot.marathon.Get(nil, &cur, &marathon)
+	if err != nil {
+		return err
+	}
+
+	marathon.ResetMarathon()
 	reply := 0
 	err = cc.Bot.marathon.Update(nil, &marathon, &reply)
 	if err != nil {
@@ -202,7 +225,19 @@ func (m *Marathon) NextGame() error {
 	return nil
 }
 
-func (m *Marathon) Reset() error {
+func (m *Marathon) ResetGame() error {
+	for _, game := range m.Games {
+		if game.Status != nil && *game.Status == GameStatusRunning {
+			var status = GameStatusNotStarted
+			game.Status = &status
+			game.StartedTime = nil
+			game.EndedTime = nil
+		}
+	}
+	return nil
+}
+
+func (m *Marathon) ResetMarathon() error {
 	for _, game := range m.Games {
 		var status = GameStatusNotStarted
 		game.Status = &status
