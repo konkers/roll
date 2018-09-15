@@ -130,6 +130,11 @@ func (b *Bot) userLevel(username string) int {
 }
 
 func (b *Bot) isAdminRequest(r *http.Request) bool {
+	// Internal Request
+	if r == nil {
+		return true
+	}
+
 	return r.Header.Get("Client-ID") == b.Config.ClientID &&
 		r.Header.Get("Authorization") == ("OAuth "+b.Config.APIOAuth)
 }
