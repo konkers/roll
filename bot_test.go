@@ -2,17 +2,32 @@ package roll
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"testing"
 	"time"
 
 	"github.com/konkers/mocktwitch"
+	"github.com/phayes/freeport"
 )
 
 func newTestBot(t *testing.T) (*Bot, *mocktwitch.Twitch) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	mock, err := mocktwitch.NewTwitch()
 	if err != nil {
 		t.Fatalf("Can't create mock twitch: %v.", err)
+	}
+
+	tmpFile, err := ioutil.TempFile("", "bot.*.db")
+	if err != nil {
+		t.Fatalf("Can't get temporary file: %v", err)
+	}
+	dbPath := tmpFile.Name()
+
+	httpsPort, err := freeport.GetFreePort()
+	if err != nil {
+		t.Fatalf("Can't get free port for https server: %v", err)
 	}
 
 	testConfig := &Config{
@@ -22,7 +37,11 @@ func newTestBot(t *testing.T) (*Bot, *mocktwitch.Twitch) {
 		APIOAuth:    "",
 		IRCOAuth:    "",
 		IRCAddress:  mock.IrcHost,
+		HTTPSAddr:   fmt.Sprintf("localhost:%d", httpsPort),
+		KeyFile:     mock.Keys.KeyFilename,
+		CertFile:    mock.Keys.CertFilename,
 		AdminUser:   "rock",
+		DBPath:      dbPath,
 	}
 
 	b := NewBot(testConfig)
