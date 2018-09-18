@@ -45,7 +45,10 @@ type CommandContext struct {
 
 // NewBot creates a new, unconnected bot.
 func NewBot(config *Config) *Bot {
-	db, err := storm.Open("bot.db")
+	if config.DBPath == "" {
+		config.DBPath = "bot.db"
+	}
+	db, err := storm.Open(config.DBPath)
 	if err != nil {
 		log.Fatalf("can't open storm db: %v", err)
 	}
