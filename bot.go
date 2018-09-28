@@ -1,13 +1,15 @@
 package roll
 
 import (
+	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/asdine/storm"
 	twitch "github.com/gempir/go-twitch-irc"
-	"github.com/konkers/cmd"
 	"github.com/konkers/twitchapi"
 )
 
@@ -16,18 +18,17 @@ type Bot struct {
 	Config    *Config
 	ircClient *twitch.Client
 	apiClient *twitchapi.Connection
-	commands  *cmd.Engine
+	commands  *CmdEngine
 
 	// This should eventually be private and hand out namespaces to modules.
-	DB *storm.DB
+	db *storm.DB
 
-	alert    *AlertService
-	giveaway *GiveawayService
-	marathon *MarathonService
+	modules map[string]Module
+
+	funcMap template.FuncMap
 
 	// For testing.  Unsure what the best way to handle this longterm.
-	onConnect func()
-	cmdErr    error
+	cmdErr error
 }
 
 // CommandContext is passed to commands that are executed.
@@ -43,29 +44,58 @@ type CommandContext struct {
 	IRC *twitch.Client
 }
 
+// Module is the basic interface for bot modules.
+type Module interface {
+	Start() error
+	Stop() error
+}
+
+// PublicWebProvider is implemented by modules that serve public web pages.
+type PublicWebProvider interface {
+	GetPublicHandler() http.Handler
+}
+
+// AdminWebProvider is implemented by modules that serve admin web pages.
+type AdminWebProvider interface {
+	GetAdminHandler() http.Handler
+}
+
+// RPCServiceProvider is implemented my modules that handle rpc requests.
+type RPCServiceProvider interface {
+	GetRPCService() interface{}
+}
+
+// ModuleFactory functions create modules.
+type ModuleFactory func(bot *Bot, dbBucket storm.Node) (Module, error)
+
+var moduleFactories = make(map[string]ModuleFactory)
+
+func RegisterModuleFactory(f ModuleFactory, name string) error {
+	if _, ok := moduleFactories[name]; ok {
+		return fmt.Errorf("Module name \"%s\" registered more than once.", name)
+	}
+	moduleFactories[name] = f
+	return nil
+}
+
 // NewBot creates a new, unconnected bot.
-func NewBot(config *Config) *Bot {
+func NewBot(config *Config) (*Bot, error) {
 	if config.DBPath == "" {
 		config.DBPath = "bot.db"
 	}
 	db, err := storm.Open(config.DBPath)
 	if err != nil {
-		log.Fatalf("can't open storm db: %v", err)
+		return nil, fmt.Errorf("can't open storm db: %v", err)
 	}
 
 	b := &Bot{
 		Config:    config,
-		DB:        db,
+		db:        db,
+		modules:   make(map[string]Module),
 		ircClient: twitch.NewClient(config.BotUsername, "oauth:"+config.IRCOAuth),
 		apiClient: twitchapi.NewConnection(config.ClientID, config.APIOAuth),
-		commands:  cmd.NewEngine(),
+		commands:  NewCmdEngine(),
 	}
-
-	b.AddCommand("game", "Tells the channel the current game.", gameCommand, 0)
-	b.AddCommand("giveaway", "Giveaway", giveawayCommand, 0)
-	b.AddCommand("marathon", "Show/Manipulate current maraton.", marathonCommand, 0)
-	b.AddCommand("m", "alias for marathon.", marathonCommand, 0)
-	b.AddCommand("setgame", "Sets the stream game.", setGameCommand, 10)
 
 	if config.IRCAddress != "" {
 		b.ircClient.IrcAddress = config.IRCAddress
@@ -74,25 +104,78 @@ func NewBot(config *Config) *Bot {
 		b.apiClient.UrlBase = config.APIURLBase
 	}
 
-	b.ircClient.OnConnect(b.handleConnect)
 	b.ircClient.OnNewMessage(b.handleMessage)
 
 	b.ircClient.Join(b.Config.Channel)
 
-	return b
+	return b, nil
+}
+
+func (b *Bot) AddModule(modType string) error {
+	return b.AddModuleByName(modType, modType)
+}
+
+func (b *Bot) AddModuleByName(modType string, name string) error {
+	factory, ok := moduleFactories[modType]
+	if !ok {
+		return fmt.Errorf("Module type %s not found.", modType)
+	}
+
+	if _, ok = b.modules[name]; ok {
+		return fmt.Errorf("Module named %s already registered.", name)
+	}
+
+	module, err := factory(b, b.db.From(name))
+	if err != nil {
+		return fmt.Errorf("Can't instantiate module %s: %v", modType, err)
+	}
+
+	b.modules[name] = module
+
+	return nil
 }
 
 // AddCommand adds a bot command.
 func (b *Bot) AddCommand(name string, help string,
-	handler func(interface{}, []string) error,
+	handler func(*CommandContext, []string) error,
 	userLevel int) error {
 	return b.commands.AddCommand(name, help, handler, userLevel)
 }
 
 // Connect the bot to Twitch.
 func (b *Bot) Connect() error {
-	b.startWebserver()
-	return b.ircClient.Connect()
+	// TODO: stop webserver on error
+	err := b.startWebserver()
+	if err != nil {
+		return err
+	}
+
+	errChan := make(chan error)
+	connectChan := make(chan bool)
+	b.ircClient.OnConnect(func() {
+		connectChan <- true
+	})
+	go func() {
+		err := b.ircClient.Connect()
+		errChan <- err
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			return fmt.Errorf("Can't connect to irc: %v", err)
+		}
+	case <-time.After(time.Second * 3):
+		return fmt.Errorf("IRC connect timed out")
+	case <-connectChan:
+		// success case
+	}
+
+	for _, mod := range b.modules {
+		mod.Start()
+	}
+
+	return nil
 }
 
 func (b *Bot) handleMessage(channel string, user twitch.User, message twitch.Message) {
@@ -117,14 +200,7 @@ func (b *Bot) handleMessage(channel string, user twitch.User, message twitch.Mes
 	}
 }
 
-func (b *Bot) handleConnect() {
-	if b.onConnect != nil {
-		b.onConnect()
-	}
-}
-
 func (b *Bot) userLevel(username string) int {
-	log.Println(username)
 	if username == b.Config.AdminUser {
 		return 100
 	} else {
@@ -132,7 +208,7 @@ func (b *Bot) userLevel(username string) int {
 	}
 }
 
-func (b *Bot) isAdminRequest(r *http.Request) bool {
+func (b *Bot) IsAdminRequest(r *http.Request) bool {
 	// Internal Request
 	if r == nil {
 		return true
@@ -140,4 +216,8 @@ func (b *Bot) isAdminRequest(r *http.Request) bool {
 
 	return r.Header.Get("Client-ID") == b.Config.ClientID &&
 		r.Header.Get("Authorization") == ("OAuth "+b.Config.APIOAuth)
+}
+
+func (b *Bot) Irc() *twitch.Client {
+	return b.ircClient
 }

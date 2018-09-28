@@ -6,6 +6,10 @@ import (
 
 	"github.com/konkers/mocktwitch"
 	"github.com/konkers/roll"
+	_ "github.com/konkers/roll/modules/alert"
+	_ "github.com/konkers/roll/modules/game"
+	_ "github.com/konkers/roll/modules/giveaway"
+	_ "github.com/konkers/roll/modules/marathon"
 )
 
 var configFileName = flag.String("config", "config.json", "Config file")
@@ -28,6 +32,13 @@ func main() {
 		config.APIURLBase = mock.ApiUrlBase
 	}
 
-	b := roll.NewBot(config)
+	b, err := roll.NewBot(config)
+	if err != nil {
+		log.Fatalf("Can't create bot: %v", err)
+	}
+	b.AddModule("alert")
+	b.AddModule("game")
+	b.AddModule("giveaway")
+	b.AddModule("marathon")
 	b.Connect()
 }

@@ -1,9 +1,11 @@
-package roll
+package giveaway
 
 import (
 	"fmt"
 	"log"
-	"net/http"
+
+	"github.com/asdine/storm"
+	"github.com/konkers/roll"
 )
 
 type Giveaway struct {
@@ -13,44 +15,44 @@ type Giveaway struct {
 	Participants []string `json:"participants"`
 }
 
-type GiveawayService struct {
-	bot *Bot
+type GiveawayModule struct {
+	bot *roll.Bot
+	db  storm.Node
+
+	service *GiveawayService
 }
 
-func NewGiveawayService(bot *Bot) *GiveawayService {
-	return &GiveawayService{
+func init() {
+	roll.RegisterModuleFactory(NewGiveawayModule, "giveaway")
+}
+
+func NewGiveawayModule(bot *roll.Bot, dbBucket storm.Node) (roll.Module, error) {
+	module := &GiveawayModule{
 		bot: bot,
+		db:  dbBucket,
 	}
+	module.service = NewGiveawayService(module)
+
+	bot.AddCommand("giveaway", "Giveaway command", module.giveawayCommand, 0)
+
+	return module, nil
 }
 
-func (s *GiveawayService) New(r *http.Request, g *Giveaway, id *int) error {
-	g.ID = 0
-	return s.Update(r, g, id)
-}
-
-func (s *GiveawayService) Update(r *http.Request, g *Giveaway, id *int) error {
-	if !s.bot.isAdminRequest(r) {
-		return fmt.Errorf("access denied")
-	}
-	err := s.bot.DB.From("giveaway").Save(g)
-	if err != nil {
-		*id = -1
-		return err
-	}
-
-	*id = g.ID
+func (m *GiveawayModule) Start() error {
 	return nil
 }
 
-func (s *GiveawayService) Get(r *http.Request, id *int, g *Giveaway) error {
-	err := s.bot.DB.From("giveaway").One("ID", *id, g)
-	log.Printf("%#v", g)
-	return err
+func (m *GiveawayModule) Stop() error {
+	return nil
 }
 
-func giveawayDesc(cc *CommandContext) error {
+func (m *GiveawayModule) GetRPCService() interface{} {
+	return m.service
+}
+
+func (m *GiveawayModule) giveawayDesc(cc *roll.CommandContext) error {
 	var giveaways []Giveaway
-	err := cc.Bot.DB.From("giveaway").All(&giveaways)
+	err := m.db.All(&giveaways)
 	if err != nil {
 		return err
 	}
@@ -67,14 +69,9 @@ func giveawayDesc(cc *CommandContext) error {
 	return nil
 }
 
-func giveawayCommand(ctx interface{}, args []string) error {
-	cc, ok := ctx.(*CommandContext)
-	if !ok {
-		return fmt.Errorf("ctx not a CommandContext")
-	}
-
+func (m *GiveawayModule) giveawayCommand(cc *roll.CommandContext, args []string) error {
 	if len(args) == 0 {
-		return giveawayDesc(cc)
+		return m.giveawayDesc(cc)
 	}
 
 	follows, err := cc.API.GetChannelFollows(cc.Channel)
@@ -83,8 +80,6 @@ func giveawayCommand(ctx interface{}, args []string) error {
 	}
 	isFollower := false
 	for _, f := range follows.Follows {
-		log.Printf("%#v", f)
-		log.Printf("%d %d", int64(f.User.ID), cc.User.UserID)
 		if int64(f.User.ID) == cc.User.UserID {
 			isFollower = true
 			break
@@ -97,7 +92,7 @@ func giveawayCommand(ctx interface{}, args []string) error {
 	}
 
 	var giveaways []Giveaway
-	err = cc.Bot.DB.From("giveaway").All(&giveaways)
+	err = m.db.All(&giveaways)
 	if err != nil {
 		return err
 	}
@@ -126,7 +121,7 @@ func giveawayCommand(ctx interface{}, args []string) error {
 	}
 
 	giveaway.Participants = append(giveaway.Participants, cc.User.Username)
-	err = cc.Bot.DB.From("giveaway").Save(giveaway)
+	err = m.db.Save(giveaway)
 	if err != nil {
 		return err
 	}
