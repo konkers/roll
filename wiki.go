@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"path"
 
 	"github.com/gomarkdown/markdown"
@@ -27,17 +26,15 @@ func (b *Bot) wikiHandler(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)
 		return
 	}
-
-	filename := path.Join("wiki", page+".md")
-	f, err := os.Open(filename)
+	f, err := b.openFile(path.Join("wiki", page+".md"))
 	if err != nil {
-		log.Printf("Can't open: %s", filename)
+		log.Printf("Can't find wiki page %s: %v", page, err)
 		http.NotFound(w, req)
 		return
 	}
 	data, err := ioutil.ReadAll(f)
 	if err != nil {
-		log.Printf("Can't read: %s", filename)
+		log.Printf("Can't read wiki page %s: %v", page, err)
 		http.NotFound(w, req)
 		return
 	}

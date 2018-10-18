@@ -209,3 +209,13 @@ func TestTimeDurationJSON(t *testing.T) {
 	testDurationError(t, "\"\"")
 	testDurationError(t, "1")
 }
+
+func TestIndex(t *testing.T) {
+	bot, _ := newConnectedTestBot(t)
+	client := getTestHttpClient()
+	url := "https://" + bot.Config.HTTPSAddr + "/"
+	_, err := client.Get(url)
+	if err != nil {
+		t.Errorf("Got error getting %s: %v", url, err)
+	}
+}
