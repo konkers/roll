@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"time"
 
 	"github.com/konkers/mocktwitch"
 	"github.com/konkers/roll"
@@ -40,5 +41,14 @@ func main() {
 	b.AddModule("game")
 	b.AddModule("giveaway")
 	b.AddModule("marathon")
-	b.Connect()
+
+	err = b.Connect()
+	if err != nil {
+		log.Fatalf("Can't connect bot: %v", err)
+	}
+
+	// Hack until proper termination control is done.
+	for {
+		time.Sleep(time.Second)
+	}
 }
