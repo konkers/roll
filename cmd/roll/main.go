@@ -11,6 +11,7 @@ import (
 	_ "github.com/konkers/roll/modules/game"
 	_ "github.com/konkers/roll/modules/giveaway"
 	_ "github.com/konkers/roll/modules/marathon"
+	_ "github.com/konkers/roll/modules/simplecmd"
 )
 
 var configFileName = flag.String("config", "config.json", "Config file")
@@ -41,6 +42,7 @@ func main() {
 	b.AddModule("game")
 	b.AddModule("giveaway")
 	b.AddModule("marathon")
+	b.AddModule("simplecmd")
 
 	err = b.Connect()
 	if err != nil {
