@@ -143,6 +143,11 @@ func (b *Bot) AddCommand(name string, help string,
 	return b.commands.AddCommand(name, help, handler, userLevel)
 }
 
+// RemoveCommand removes a bot command.
+func (b *Bot) RemoveCommand(name string) error {
+	return b.commands.RemoveCommand(name)
+}
+
 // Connect the bot to Twitch.
 func (b *Bot) Connect() error {
 	// TODO: stop webserver on error
