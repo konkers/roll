@@ -3,6 +3,7 @@ package giveaway
 import (
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/asdine/storm"
 	"github.com/konkers/roll"
@@ -80,7 +81,7 @@ func (m *GiveawayModule) giveawayCommand(cc *roll.CommandContext, args []string)
 	}
 	isFollower := false
 	for _, f := range follows.Follows {
-		if int64(f.User.ID) == cc.User.UserID {
+		if strconv.Itoa(f.User.ID) == cc.User.UserID {
 			isFollower = true
 			break
 		}
