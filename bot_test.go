@@ -156,6 +156,11 @@ func TestBotCommand(t *testing.T) {
 	case <-time.After(time.Second * 3):
 		t.Fatal("test command not invoked")
 	}
+
+	err := b.RemoveCommand("test")
+	if err != nil {
+		t.Errorf("Can't remove command: %v.", err)
+	}
 }
 
 func TestBotFailedCommand(t *testing.T) {
