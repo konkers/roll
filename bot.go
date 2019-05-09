@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"github.com/asdine/storm"
+	oidc "github.com/coreos/go-oidc"
 	twitch "github.com/gempir/go-twitch-irc"
+	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 	"github.com/konkers/twitchapi"
+	"golang.org/x/oauth2"
 )
 
 // Bot is the main object that represents the bot.
@@ -26,6 +30,12 @@ type Bot struct {
 	modules map[string]Module
 
 	funcMap template.FuncMap
+
+	authProvider *oidc.Provider
+	authVerifier *oidc.IDTokenVerifier
+	authConfig   *oauth2.Config
+
+	sessionStore *sessions.CookieStore
 
 	// For testing.  Unsure what the best way to handle this longterm.
 	cmdErr error
@@ -98,6 +108,13 @@ func NewBot(config *Config) (*Bot, error) {
 		funcMap:   make(template.FuncMap),
 	}
 
+	sessionKey := b.getState("sessionKey")
+	if sessionKey == nil {
+		sessionKey = securecookie.GenerateRandomKey(32)
+		b.setState("sessionKey", sessionKey)
+	}
+
+	b.sessionStore = sessions.NewCookieStore(sessionKey)
 	if config.IRCAddress != "" {
 		b.ircClient.IrcAddress = config.IRCAddress
 	}
@@ -106,10 +123,38 @@ func NewBot(config *Config) (*Bot, error) {
 	}
 
 	b.ircClient.OnNewMessage(b.handleMessage)
-
 	b.ircClient.Join(b.Config.Channel)
 
+	b.authInit()
+
 	return b, nil
+}
+
+type botStateKV struct {
+	ID    int    `storm:"id,increment"`
+	Key   string `storm:"index"`
+	Value []byte
+}
+
+func (b *Bot) getState(key string) []byte {
+	var kv botStateKV
+	err := b.db.From(".state").One("Key", key, &kv)
+	if err != nil {
+		return nil
+	}
+	return kv.Value
+}
+
+func (b *Bot) setState(key string, value []byte) {
+	var kv botStateKV
+	b.db.From(".state").One("Key", key, &kv)
+	kv.Key = key
+	kv.Value = value
+
+	err := b.db.From(".state").Save(&kv)
+	if err != nil {
+		log.Printf("error saving state %v: %v.", kv, err)
+	}
 }
 
 func (b *Bot) AddModule(modType string) error {
@@ -174,6 +219,7 @@ func (b *Bot) Connect() error {
 	case <-time.After(time.Second * 3):
 		return fmt.Errorf("IRC connect timed out")
 	case <-connectChan:
+		fmt.Println("Connected")
 		// success case
 	}
 
@@ -217,6 +263,11 @@ func (b *Bot) userLevel(username string) int {
 func (b *Bot) IsAdminRequest(r *http.Request) bool {
 	// Internal Request
 	if r == nil {
+		return true
+	}
+
+	subject, ok := r.Context().Value("subject").(string)
+	if ok && subject == b.Config.AdminSubject {
 		return true
 	}
 

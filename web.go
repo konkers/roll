@@ -84,13 +84,26 @@ func (b *Bot) AddTemplateFunc(name string, f interface{}) error {
 	return nil
 }
 
-func (b *Bot) indexHandler(w http.ResponseWriter, req *http.Request) {
-	indexTemplate, err := b.getTemplate("index.html")
+func (b *Bot) execTemplate(templatePath string, w http.ResponseWriter, req *http.Request) {
+	subject, ok := req.Context().Value("subject").(string)
+	log.Printf("subject: %v %s", ok, subject)
+	t, err := b.getTemplate(templatePath)
 	if err != nil {
+		log.Printf("Can't get template %s: %v", templatePath, err)
 		// do 404
 		return
 	}
-	indexTemplate.Execute(w, nil)
+
+	err = t.Execute(w, b)
+	if err != nil {
+		log.Printf("Can't execute template %s: %v", templatePath, err)
+		// do error
+		return
+	}
+}
+
+func (b *Bot) indexHandler(w http.ResponseWriter, req *http.Request) {
+	b.execTemplate("index.html", w, req)
 }
 
 func (b *Bot) redirectHandler(w http.ResponseWriter, req *http.Request) {
@@ -107,13 +120,20 @@ func (b *Bot) redirectHandler(w http.ResponseWriter, req *http.Request) {
 	http.Redirect(w, req, target, http.StatusTemporaryRedirect)
 }
 
+func (b *Bot) urlFunc(uri string) template.HTML {
+	return template.HTML(fmt.Sprintf("http://%s/%s", b.Config.HTTPSAddr, uri))
+}
+
 func (b *Bot) startWebserver() error {
+	b.AddTemplateFunc("url", b.urlFunc)
+
 	r := mux.NewRouter()
 
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	r.HandleFunc("/auth/", b.authHandler)
+	r.Handle("/auth/user", b.authMiddleware(http.HandlerFunc(b.authUserHandler)))
+	r.HandleFunc("/auth", b.authHandler)
 	r.HandleFunc("/wiki/{page}", b.wikiHandler)
-	r.HandleFunc("/", b.indexHandler)
+	r.Handle("/", b.authMiddleware(http.HandlerFunc(b.indexHandler)))
 
 	s := rpc.NewServer()
 	s.RegisterCodec(rpcjson.NewCodec(), "application/json")
@@ -123,7 +143,7 @@ func (b *Bot) startWebserver() error {
 			s.RegisterService(provider.GetRPCService(), name)
 		}
 	}
-	r.Handle("/rpc", s)
+	r.Handle("/rpc", b.authMiddleware(s))
 
 	cert, err := tls.LoadX509KeyPair(b.Config.CertFile, b.Config.KeyFile)
 	if err != nil {

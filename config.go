@@ -13,9 +13,12 @@ type Config struct {
 	IRCOAuth    string `json:"irc_oauth"`
 	IRCAddress  string `json:"irc_addr"`
 	APIURLBase  string `json:"api_url_base"`
-	AdminUser   string `json:"admin_user"`
 
-	ClientID string `json:"client_id"`
+	AdminUser    string `json:"admin_user"`
+	AdminSubject string `json:"admin_subject"`
+
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
 
 	HTTPAddr         string `json:"http_addr"`
 	HTTPSAddr        string `json:"https_addr"`
