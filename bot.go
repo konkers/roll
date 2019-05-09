@@ -95,6 +95,7 @@ func NewBot(config *Config) (*Bot, error) {
 		ircClient: twitch.NewClient(config.BotUsername, "oauth:"+config.IRCOAuth),
 		apiClient: twitchapi.NewConnection(config.ClientID, config.APIOAuth),
 		commands:  NewCmdEngine(),
+		funcMap:   make(template.FuncMap),
 	}
 
 	if config.IRCAddress != "" {
