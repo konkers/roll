@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -56,6 +58,24 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (b *Bot) getTemplate(filename string) (*template.Template, error) {
+	file, err := b.openFile(path.Join("templates", filename))
+	if err != nil {
+		return nil, fmt.Errorf("Can't find template %s: %v", filename, err)
+	}
+	d, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading template %s: %v", filename, err)
+	}
+
+	t := template.Must(
+		template.New(filename).
+			Funcs(b.funcMap).
+			Parse(string(d)))
+
+	return t, nil
+}
+
 func (b *Bot) AddTemplateFunc(name string, f interface{}) error {
 	if _, ok := b.funcMap[name]; ok {
 		return fmt.Errorf("%s template func already registered", name)
@@ -65,10 +85,11 @@ func (b *Bot) AddTemplateFunc(name string, f interface{}) error {
 }
 
 func (b *Bot) indexHandler(w http.ResponseWriter, req *http.Request) {
-	var indexTemplate = template.Must(
-		template.New("index.html").
-			Funcs(b.funcMap).
-			ParseFiles("templates/index.html"))
+	indexTemplate, err := b.getTemplate("index.html")
+	if err != nil {
+		// do 404
+		return
+	}
 	indexTemplate.Execute(w, nil)
 }
 
