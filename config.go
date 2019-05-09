@@ -22,6 +22,8 @@ type Config struct {
 	HTTPRedirectBase string `json:"http_redirect_base"`
 	KeyFile          string `json:"key_file"`
 	CertFile         string `json:"cert_file"`
+
+	DBPath string `json:"db_path"`
 }
 
 func LoadConfig(fileName string) (*Config, error) {
