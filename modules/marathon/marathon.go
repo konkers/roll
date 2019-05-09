@@ -1,11 +1,12 @@
-package roll
+package marathon
 
 import (
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/konkers/cmd"
+	"github.com/asdine/storm"
+	"github.com/konkers/roll"
 )
 
 type MarathonGameStatus int
@@ -32,29 +33,68 @@ type Marathon struct {
 	Games []*MarathonGame `json:"games"`
 }
 
+type MarathonModule struct {
+	bot *roll.Bot
+	db  storm.Node
+
+	marathonCmd *roll.CmdEngine
+	service     *MarathonService
+}
+
 type MarathonService struct {
-	bot *Bot
+	module *MarathonModule
+}
+
+func init() {
+	roll.RegisterModuleFactory(NewMarathonModule, "marathon")
+}
+
+func NewMarathonModule(bot *roll.Bot, db storm.Node) (roll.Module, error) {
+	module := &MarathonModule{
+		bot:         bot,
+		db:          db,
+		marathonCmd: roll.NewCmdEngine(),
+	}
+
+	module.service = NewMarathonService(module)
+
+	module.marathonCmd.AddCommand("next", "go to next game", module.marathonNextCommand, 10)
+	module.marathonCmd.AddCommand("resetgame", "reset the game", module.marathonResetGameCommand, 10)
+	module.marathonCmd.AddCommand("resetmarathon", "reset the marathon", module.marathonResetMarathonCommand, 10)
+
+	if err := bot.AddTemplateFunc("status", renderStatus); err != nil {
+		return nil, err
+	}
+
+	if err := bot.AddTemplateFunc("time", renderTime); err != nil {
+		return nil, err
+	}
+
+	return module, nil
+}
+
+func (m *MarathonModule) Start() error {
+	return nil
+}
+
+func (m *MarathonModule) Stop() error {
+	return nil
 }
 
 const CurrentMarathon = 1
 
-var marathonCmd = cmd.NewEngine()
-
-func NewMarathonService(bot *Bot) *MarathonService {
-	marathonCmd.AddCommand("next", "go to next game", marathonNextCommand, 10)
-	marathonCmd.AddCommand("resetgame", "reset the game", marathonResetGameCommand, 10)
-	marathonCmd.AddCommand("resetmarathon", "reset the marathon", marathonResetMarathonCommand, 10)
+func NewMarathonService(module *MarathonModule) *MarathonService {
 	return &MarathonService{
-		bot: bot,
+		module: module,
 	}
 }
 
 func (s *MarathonService) New(r *http.Request, args *Marathon, reply *int) error {
-	if !s.bot.isAdminRequest(r) {
+	if !s.module.bot.IsAdminRequest(r) {
 		return fmt.Errorf("access denied")
 	}
 	args.ID = 0
-	err := s.bot.DB.From("Marathon").Save(args)
+	err := s.module.db.Save(args)
 	if err != nil {
 		*reply = -1
 		return err
@@ -65,10 +105,10 @@ func (s *MarathonService) New(r *http.Request, args *Marathon, reply *int) error
 }
 
 func (s *MarathonService) Update(r *http.Request, args *Marathon, reply *int) error {
-	if !s.bot.isAdminRequest(r) {
+	if !s.module.bot.IsAdminRequest(r) {
 		return fmt.Errorf("access denied")
 	}
-	err := s.bot.DB.From("Marathon").Save(args)
+	err := s.module.db.Save(args)
 	if err != nil {
 		*reply = -1
 		return err
@@ -78,14 +118,47 @@ func (s *MarathonService) Update(r *http.Request, args *Marathon, reply *int) er
 	return nil
 }
 
-func (s *MarathonService) Get(r *http.Request, id *int, marathon *Marathon) error {
-	return s.bot.DB.From("Marathon").One("ID", *id, marathon)
+func renderStatus(status *MarathonGameStatus) string {
+	if status == nil {
+		return "not started"
+	}
+	switch *status {
+	case GameStatusNotStarted:
+		return "not started"
+	case GameStatusRunning:
+		return "running"
+	case GameStatusFinished:
+		return "finished"
+	default:
+		return "???"
+	}
 }
 
-func showMarathon(cc *CommandContext) error {
+func renderTime(game *MarathonGame) string {
+	var d time.Duration
+	if game.StartedTime == nil {
+		return "?:??:??"
+	} else if game.EndedTime == nil {
+		d = time.Now().Sub(*game.StartedTime)
+	} else {
+		d = game.EndedTime.Sub(*game.StartedTime)
+	}
+	hours := d.Truncate(time.Hour)
+	d -= hours
+	mins := d.Truncate(time.Minute)
+	d -= mins
+	seconds := d.Truncate(time.Second)
+	return fmt.Sprintf("%01d:%02d:%02d", int(hours.Hours()), int(mins.Minutes()), int(seconds.Seconds()))
+}
+
+func (s *MarathonService) Get(r *http.Request, id *int, marathon *Marathon) error {
+	return s.module.db.One("ID", *id, marathon)
+}
+
+func (m *MarathonModule) showMarathon(cc *roll.CommandContext) error {
 	var marathon Marathon
 	cur := CurrentMarathon
-	err := cc.Bot.marathon.Get(nil, &cur, &marathon)
+	err := m.service.Get(nil, &cur, &marathon)
 	if err != nil {
 		return err
 	}
@@ -98,34 +171,25 @@ func showMarathon(cc *CommandContext) error {
 	return nil
 }
 
-func marathonCommand(ctx interface{}, args []string) error {
-	cc, ok := ctx.(*CommandContext)
-	if !ok {
-		return fmt.Errorf("ctx not a CommandContext")
-	}
-
+func (m *MarathonModule) marathonCommand(cc *roll.CommandContext, args []string) error {
 	if len(args) == 0 {
-		return showMarathon(cc)
+		return m.showMarathon(cc)
 	}
 
-	return marathonCmd.Exec(cc, cc.UserLevel, args)
+	return m.marathonCmd.Exec(cc, cc.UserLevel, args)
 }
 
-func marathonResetGameCommand(ctx interface{}, args []string) error {
-	cc, ok := ctx.(*CommandContext)
-	if !ok {
-		return fmt.Errorf("ctx not a CommandContext")
-	}
+func (m *MarathonModule) marathonResetGameCommand(cc *roll.CommandContext, args []string) error {
 	var marathon Marathon
 	cur := CurrentMarathon
-	err := cc.Bot.marathon.Get(nil, &cur, &marathon)
+	err := m.service.Get(nil, &cur, &marathon)
 	if err != nil {
 		return err
 	}
 
 	marathon.ResetGame()
 	reply := 0
-	err = cc.Bot.marathon.Update(nil, &marathon, &reply)
+	err = m.service.Update(nil, &marathon, &reply)
 	if err != nil {
 		return err
 	}
@@ -133,21 +197,17 @@ func marathonResetGameCommand(ctx interface{}, args []string) error {
 	return nil
 }
 
-func marathonResetMarathonCommand(ctx interface{}, args []string) error {
-	cc, ok := ctx.(*CommandContext)
-	if !ok {
-		return fmt.Errorf("ctx not a CommandContext")
-	}
+func (m *MarathonModule) marathonResetMarathonCommand(cc *roll.CommandContext, args []string) error {
 	var marathon Marathon
 	cur := CurrentMarathon
-	err := cc.Bot.marathon.Get(nil, &cur, &marathon)
+	err := m.service.Get(nil, &cur, &marathon)
 	if err != nil {
 		return err
 	}
 
 	marathon.ResetMarathon()
 	reply := 0
-	err = cc.Bot.marathon.Update(nil, &marathon, &reply)
+	err = m.service.Update(nil, &marathon, &reply)
 	if err != nil {
 		return err
 	}
@@ -155,14 +215,10 @@ func marathonResetMarathonCommand(ctx interface{}, args []string) error {
 	return nil
 }
 
-func marathonNextCommand(ctx interface{}, args []string) error {
-	cc, ok := ctx.(*CommandContext)
-	if !ok {
-		return fmt.Errorf("ctx not a CommandContext")
-	}
+func (m *MarathonModule) marathonNextCommand(cc *roll.CommandContext, args []string) error {
 	var marathon Marathon
 	cur := CurrentMarathon
-	err := cc.Bot.marathon.Get(nil, &cur, &marathon)
+	err := m.service.Get(nil, &cur, &marathon)
 	if err != nil {
 		return err
 	}
@@ -171,7 +227,7 @@ func marathonNextCommand(ctx interface{}, args []string) error {
 	marathon.NextGame()
 	nextGame := marathon.CurrentGame()
 	reply := 0
-	err = cc.Bot.marathon.Update(nil, &marathon, &reply)
+	err = m.service.Update(nil, &marathon, &reply)
 	if err != nil {
 		return err
 	}
@@ -182,9 +238,9 @@ func marathonNextCommand(ctx interface{}, args []string) error {
 	if nextGame != nil {
 		cc.IRC.Say(cc.Channel, fmt.Sprintf("%s started!", *nextGame.Name))
 		if nextGame.TwitchGame != nil {
-			setGameCommand(ctx, []string{*nextGame.TwitchGame})
+			cc.API.SetChannelGame(cc.Channel, *nextGame.TwitchGame)
 		} else {
-			setGameCommand(ctx, []string{*nextGame.Name})
+			cc.API.SetChannelGame(cc.Channel, *nextGame.Name)
 		}
 	}
 	return nil
